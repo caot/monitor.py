@@ -1,14 +1,18 @@
-# Reloading Source Code refers to the following links 
+# Reloading Source Code refers to the following links
 # http://code.google.com/p/modwsgi/wiki/ReloadingSourceCode#Restarting_Daemon_Processes
 # http://things-ive-learned-about-it.blogspot.com/2010/04/using-modwsgi-to-support-django.html
 
 import os
 import sys
-import time
 import signal
 import threading
 import atexit
-import Queue
+import six
+
+if six.PY3:
+    import queue as Queue
+else:
+    import Queue
 
 _interval = 1.0
 _times = {}
@@ -18,12 +22,14 @@ _running = False
 _queue = Queue.Queue()
 _lock = threading.Lock()
 
+
 def _restart(path):
     _queue.put(True)
     prefix = 'monitor (pid=%d):' % os.getpid()
-    print >> sys.stderr, '%s Change detected to \'%s\'.' % (prefix, path)
-    print >> sys.stderr, '%s Triggering process restart.' % prefix
+    print('%s Change detected to \'%s\'.' % (prefix, path), file=sys.stderr)
+    print('%s Triggering process restart.' % prefix, file=sys.stderr)
     os.kill(os.getpid(), signal.SIGINT)
+
 
 def _modified(path):
     try:
@@ -49,7 +55,7 @@ def _modified(path):
 
         if mtime != _times[path]:
             return True
-    except:
+    except Exception as _e:
         # If any exception occured, likely that file has been
         # been removed just before stat(), so force a restart.
 
@@ -57,11 +63,12 @@ def _modified(path):
 
     return False
 
+
 def _monitor():
     while 1:
         # Check modification times on all files in sys.modules.
 
-        for module in sys.modules.values():
+        for module in list(sys.modules.values()):
             if not hasattr(module, '__file__'):
                 continue
             path = getattr(module, '__file__')
@@ -83,24 +90,29 @@ def _monitor():
 
         try:
             return _queue.get(timeout=_interval)
-        except:
+        except Exception as _e:
             pass
+
 
 _thread = threading.Thread(target=_monitor)
 _thread.setDaemon(True)
 
+
 def _exiting():
     try:
         _queue.put(True)
-    except:
+    except Exception as _e:
         pass
     _thread.join()
 
+
 atexit.register(_exiting)
 
+
 def track(path):
-    if not path in _files:
+    if path not in _files:
         _files.append(path)
+
 
 def start(interval=1.0):
     global _interval
@@ -111,8 +123,7 @@ def start(interval=1.0):
     _lock.acquire()
     if not _running:
         prefix = 'monitor (pid=%d):' % os.getpid()
-        print >> sys.stderr, '%s Starting change monitor.' % prefix
+        print('%s Starting change monitor.' % prefix, file=sys.stderr)
         _running = True
         _thread.start()
     _lock.release()
-    
